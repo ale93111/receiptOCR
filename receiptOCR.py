@@ -208,7 +208,7 @@ plt.imshow(tot, cmap='gray')
 cif = resize_win(tot,t)
 #%%
 im = Image.fromarray(np.uint8(plt.cm.gist_earth(cif)*255))
-totprice = pytesseract.image_to_string(im) 
+totprice = pytesseract.image_to_string(im,config="-psm 7") 
 totprice = totprice.replace(" ","")
 totprice = totprice.replace(",",".") 
 
@@ -267,7 +267,7 @@ pricelist = []
 
 for impr in prcif:    
     im = Image.fromarray(np.uint8(plt.cm.gist_earth(impr)*255))
-    pricelist.append(pytesseract.image_to_string(im) )
+    pricelist.append(pytesseract.image_to_string(im,config="-psm 7") )
 
 print(pricelist)
 
