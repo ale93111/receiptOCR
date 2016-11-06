@@ -29,7 +29,7 @@ def get_big_cont(contours):
     return contours[areacnt.index(max(areacnt))]
     
 
-def resize_win(img2,t):
+def resize_win(img2,t,returnpos=False):
     #kernel = np.array([[0,0,0],[0,1,1],[0,0,0]], np.uint8)
     #dilation = cv2.dilate(img2,kernel,iterations = m)
     #split image in half and apply opposite dilation morphology
@@ -53,7 +53,8 @@ def resize_win(img2,t):
     
     img3 = cv2.copyMakeBorder(img2[(y):(y+h),(x):(x+w)],t,t,t,t,cv2.BORDER_CONSTANT,0)
     plt.imshow(img3, cmap='gray')   
-    
+    if returnpos:
+        return x,y,h,w
     return img3.copy()
     
 def net_predict_label(net, input_image):
@@ -213,7 +214,7 @@ api = tesserocr.PyTessBaseAPI(psm=8,init=True)
 #api.InitFull(variables=dict(load_system_dawg="0"))
 api.SetVariable("tessedit_char_whitelist", "0123456789.,-")
 
-img_receipt = cv2.imread(path+'s16.jpg', 0)
+img_receipt = cv2.imread(path+'s10.jpg', 0)
 
 #ret, img_binary = cv2.threshold(img_receipt,0,255,cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
 img_binary  = cv2.adaptiveThreshold(img_receipt, 255, cv2.ADAPTIVE_THRESH_MEAN_C, 
@@ -238,27 +239,28 @@ t = 5
 plt.figure(figsize=(12, 12))
 plt.imshow(img_binary, cmap='gray')
 #%%
-#TOTposx = 3485 #per s10
-#TOTposy = 2589 #per s10 #6-8
+TOTposx = 3485 #per s10
+TOTposy = 2589 #per s10 OK
 #TOTposx = 2304 #per s11
 #TOTposy = 2616 #per s11 OK
 #TOTposx = 2086 #per s12
 #TOTposy = 2673 #per s12 OK
 #TOTposx = 2923 #per s13
-#TOTposy = 2695 #per s13 #euro err
-#TOTposx = 3200 #per s14 15 #.err
-#TOTposy = 2650 #per s14 15 #subtot err
-TOTposx = 3780 #per s16
-TOTposy = 2700 #per s16 #.err
+#TOTposy = 2695 #per s13 #6-8 x2
+#TOTposx = 3200 #per s14 15 #OK
+#TOTposy = 2650 #per s14 15 #noise+sconto
+#TOTposx = 3780 #per s16
+#TOTposy = 2700 #per s16 #OK
 #%%
 width, height = img_receipt.shape
 img_tot = img_binary[(TOTposx-xmargin-t):(TOTposx+xmargin+t), 
-                 (TOTposy-ymargin-t):(TOTposy+ymargin+t)]
+                     (TOTposy-ymargin-t):(TOTposy+ymargin+t)]
 
 plt.figure(figsize=(7,7))
 plt.imshow(img_tot, cmap='gray')
 #%%
 win_tot = resize_win(img_tot,t)
+x,y,h,w = resize_win(img_tot,t,returnpos=True)
 #%%
 totprice, _ = recognize_price(api,win_tot)
 
@@ -267,7 +269,7 @@ totprice = totprice.replace(",",".")
 
 print("totprice = ", totprice)
 #%%
-img_allprices = img_binary[(0):(TOTposx+xmargin), 
+img_allprices = img_binary[(0):(TOTposx+xmargin-h-y), 
                            (TOTposy-ymargin):(TOTposy+ymargin)]
 
 plt.figure(figsize=(7,7))
@@ -315,7 +317,21 @@ for im_price in win_prices:
     plt.imshow(im_price, cmap='gray',interpolation=None)
     #print("dy = ", find_dy(im_price))
     plt.show()
+#%%
+#correction removing letters
+api.SetVariable("tessedit_char_whitelist", string.ascii_uppercase+"0123456789.,-")
+delist    = []
+for j,im_price in enumerate(win_prices):        
+    text, prob = recognize_price(api,im_price)
+    if not any(x in text for x in string.digits):    
+        delist.append(j)
+    #problist.append(prob)
+    #print(text, prob)
+
+for j in delist[::-1]:        
+    del win_prices[j]
 #%%    
+api.SetVariable("tessedit_char_whitelist", "0123456789.,-")
 pricelist = []
 delist    = []
 for j,im_price in enumerate(win_prices):        
@@ -345,6 +361,7 @@ while '' in pricelist: pricelist.remove('')
 print("pricelist = ", pricelist)
 #%%
 #Error correction
+#correction of prices that don't contain '.'
 errprindex = []
 for j,pricej in enumerate(pricelist):
     if '.' not in pricej:
@@ -385,12 +402,23 @@ for pricej in pricelist:
 
 print("price list  = ", npricelist)
 print("total price = ", npricetot)
-
+ok = False
 if isequal(npricetot,np.sum(npricelist)):
     print("\n","Everything's OK!")
+    ok = True
 else: 
     print("\n","Please check prices")
+    ok = False
 #%%
+b = []
+if not ok:
+    a = np.argmax(npricelist)
+    b = npricelist.copy()
+    del b[a:]
+    if isequal(npricelist[a],np.sum(b)):
+        print("removed subtotal")
+        del npricelist[a]
+        
 print("price list  = ", npricelist)
 print("total price        = ", npricetot)
 print("np.sum(npricelist) = ", np.sum(npricelist))
