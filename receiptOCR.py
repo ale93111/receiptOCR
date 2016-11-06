@@ -362,11 +362,13 @@ print("pricelist = ", pricelist)
 #%%
 #Error correction
 #correction of prices that don't contain '.'
-errprindex = []
-for j,pricej in enumerate(pricelist):
-    if '.' not in pricej:
-        errprindex.append(j)
-        
+#errprindex = []
+#for j,pricej in enumerate(pricelist):
+#    if '.' not in pricej:
+#        errprindex.append(j)
+#        
+errprindex = [j for j,pricej in enumerate(pricelist) if '.' not in pricej]
+
 print(errprindex)
 
 template = cv2.imread(path+'modelv.jpg', 0)
@@ -393,12 +395,8 @@ for j,i in enumerate(errprindex):
     pricelist[i] = ''.join(list1)
 
 #%%
-npricelist = []
+npricelist = [stringtofloat(pricej) for pricej in pricelist]
 npricetot  = stringtofloat(totprice)
-
-for pricej in pricelist:
-    npricelist.append(stringtofloat(pricej))
-    
 
 print("price list  = ", npricelist)
 print("total price = ", npricetot)
