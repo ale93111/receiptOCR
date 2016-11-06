@@ -16,7 +16,7 @@ import cv2
 import numpy as np
 from matplotlib import pyplot as plt
 from PIL import Image
-import pytesseract
+import tesserocr
 import string
 
 path = '/home/alessandro/bioretics/'
@@ -94,6 +94,7 @@ def remove_ending_01(array):
             i = i - 1
         
         return array[0:i]
+        
 def find_avgind0(array):
     numc = []
     i = 1
@@ -115,6 +116,23 @@ def find_avgind0(array):
     numc = [int(i) for i in numc]
     return numc
 
+def segment_cif(img,t):
+    temp = resize_win(img,t)
+    
+    sumx0 = np.sum(temp, axis=0)>0    
+
+    #find averages of index positions of intervals where 
+    #img projection on x-axis is 0 to evaluate grid spacing
+    numc = find_avgind0(sumx0)
+    #print(numc)
+    
+    #segmenting numbers based on pre-computed grid positions
+    cif = []
+    for i in range(len(numc)-1):
+        cif.append(temp[:,numc[i]:numc[i+1]])
+        
+    return cif
+    
 def find_dx(img):
     sumx0 = np.sum(img, axis=0)>0
     #numc = find_avgind0(sumx0)
@@ -126,8 +144,13 @@ def find_dx(img):
     indd = [t - s for s, t in zip(indpos[0], indpos[0][1:])][::2]
     #inddm = np.delete(indd,np.argmax(indd))
     
-    dx = np.average(indd)
-    return int(dx)
+    if not indd:
+        print("cannot find dx, empty index list")
+        return 0
+    else:
+        dx = np.max(indd)
+        
+    return dx
 
 def find_dy(img):
     sumy0 = np.sum(img, axis=1)>0
@@ -138,15 +161,18 @@ def find_dy(img):
     #magic - find width of projected elements
     indd = [t - s for s, t in zip(indpos[0], indpos[0][1:])][::2]
     #inddm = np.delete(indd,np.argmax(indd))
-    
-    dy = np.max(indd)
+    if not indd:
+        print("cannot find dy, empty index list")
+        return 0
+    else:
+        dy = np.max(indd)
 
     return dy
     
-def sanitize(pr):
-    safepr = pr.copy()
+def sanitize(img_prices):
+    safe_img_prices = img_prices.copy()
     dy = []
-    for i,im in enumerate(safepr):
+    for i,im in enumerate(safe_img_prices):
         dy.append(find_dy(im))
 
     tresh = 0.15
@@ -156,72 +182,99 @@ def sanitize(pr):
             listdel.append(j)
             
     for k in listdel[::-1]:
-        del safepr[k]
+        del safe_img_prices[k]
             
-    return safepr
+    return safe_img_prices
     
+def stringtofloat(listin):
+    result = []    
+    for t in listin.split():
+        try:
+            result.append(float(t))
+        except ValueError:
+            pass
+    if not result:
+        return 0
+    else:
+        return result[0]
+    
+def recognize_price(api, im_price):
+    im = Image.fromarray(np.uint8(plt.cm.gist_earth(im_price)*255))
+    api.SetImage(im)
+    api.Recognize() 
+    
+    return api.GetUTF8Text(), api.AllWordConfidences()  
+
+def isequal(a, b, rel_tol=1e-05, abs_tol=0.0):
+    return abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)
 #%%
-img = cv2.imread(path+'s10.jpg', 0)
-#ret, otsu = cv2.threshold(img,0,255,cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
-otsu = cv2.adaptiveThreshold(img, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 41, 3)
-otsu = 255 - otsu
+#TESSERACT
+api = tesserocr.PyTessBaseAPI(psm=8,init=True)
+#api.InitFull(variables=dict(load_system_dawg="0"))
+api.SetVariable("tessedit_char_whitelist", "0123456789.,-")
+
+img_receipt = cv2.imread(path+'s16.jpg', 0)
+
+#ret, img_binary = cv2.threshold(img_receipt,0,255,cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
+img_binary  = cv2.adaptiveThreshold(img_receipt, 255, cv2.ADAPTIVE_THRESH_MEAN_C, 
+                                    cv2.THRESH_BINARY_INV, 61, 3)
+#img_binary = 255 - img_binary
 
 # Some morphology to clean up image
-kernel = np.ones((8,8), np.uint8)
-opening = cv2.morphologyEx(otsu, cv2.MORPH_OPEN, kernel)
-otsu    = cv2.morphologyEx(opening, cv2.MORPH_CLOSE, kernel)
+kernel     = np.ones((8,8), np.uint8)
+opening    = cv2.morphologyEx(img_binary, cv2.MORPH_OPEN, kernel)
+img_binary = cv2.morphologyEx(opening, cv2.MORPH_CLOSE, kernel)
+#img_binary = opening.copy()
 
 plt.figure(figsize=(12, 12))
-plt.imshow(img, cmap='gray')
+plt.imshow(img_receipt, cmap='gray')
 
-himg, wimg = img.shape
+himg, wimg = img_receipt.shape
 xmargin = int(0.06*wimg)
 ymargin = int(0.06*himg)
 t = 5
 
 #%%
 plt.figure(figsize=(12, 12))
-plt.imshow(otsu, cmap='gray')
+plt.imshow(img_binary, cmap='gray')
 #%%
-#TOTposx = 738 #per s5
-#TOTposy = 817 #per s5
-#TOTposx = 478 #per s4
-#TOTposy = 912 #per s4
-#TOTposx = 850 #per s2
-#TOTposy = 625 #per s2
-#TOTposx = 723 #per s1
-#TOTposy = 850 #per s1
-TOTposx = 3085 #per s10
-TOTposy = 2589 #per s10
+#TOTposx = 3485 #per s10
+#TOTposy = 2589 #per s10 #6-8
 #TOTposx = 2304 #per s11
-#TOTposy = 2616 #per s11
+#TOTposy = 2616 #per s11 OK
 #TOTposx = 2086 #per s12
-#TOTposy = 2673 #per s12
+#TOTposy = 2673 #per s12 OK
+#TOTposx = 2923 #per s13
+#TOTposy = 2695 #per s13 #euro err
+#TOTposx = 3200 #per s14 15 #.err
+#TOTposy = 2650 #per s14 15 #subtot err
+TOTposx = 3780 #per s16
+TOTposy = 2700 #per s16 #.err
 #%%
-width, height = img.shape
-tot = otsu[(TOTposx-xmargin-t):(TOTposx+xmargin+t), 
-           (TOTposy-ymargin-t):(TOTposy+ymargin+t)]
+width, height = img_receipt.shape
+img_tot = img_binary[(TOTposx-xmargin-t):(TOTposx+xmargin+t), 
+                 (TOTposy-ymargin-t):(TOTposy+ymargin+t)]
 
 plt.figure(figsize=(7,7))
-plt.imshow(tot, cmap='gray')
+plt.imshow(img_tot, cmap='gray')
 #%%
-cif = resize_win(tot,t)
+win_tot = resize_win(img_tot,t)
 #%%
-im = Image.fromarray(np.uint8(plt.cm.gist_earth(cif)*255))
-totprice = pytesseract.image_to_string(im,config="-psm 7") 
+totprice, _ = recognize_price(api,win_tot)
+
 totprice = totprice.replace(" ","")
 totprice = totprice.replace(",",".") 
 
 print("totprice = ", totprice)
 #%%
-allpr = otsu[(0):(TOTposx+xmargin), 
-           (TOTposy-ymargin):(TOTposy+ymargin)]
+img_allprices = img_binary[(0):(TOTposx+xmargin), 
+                           (TOTposy-ymargin):(TOTposy+ymargin)]
 
 plt.figure(figsize=(7,7))
-plt.imshow(allpr,cmap='gray')
+plt.imshow(img_allprices,cmap='gray')
 
 #%%
-sumxallpr = np.sum(allpr, axis=1)
+sumxallpr = np.sum(img_allprices, axis=1)
 sumxallpr0 = sumxallpr>0.05*np.max(sumxallpr)
 
 #remove leading or ending zeros or ones
@@ -231,46 +284,54 @@ sumxallpr0 = remove_ending_01(sumxallpr0)
 plt.figure(figsize=(7, 7))
 plt.plot(sumxallpr0)
 #%%
-numpr = find_avgind0(sumxallpr0)
-print(numpr)
+indexpos0 = find_avgind0(sumxallpr0)
+print(indexpos0)
 
 #segmenting numbers based on pre-computed grid positions
-pr = []
-for i in range(len(numpr)-1):
-    pr.append(allpr[numpr[i]:numpr[i+1],:])
+img_prices = []
+for i in range(len(indexpos0)-1):
+    img_prices.append(img_allprices[indexpos0[i]:indexpos0[i+1],:])
 #%%
 plt.figure(figsize=(7, 7))
-plt.imshow(pr[0], cmap='gray')
+plt.imshow(img_prices[0], cmap='gray')
 #%%
-for impr in pr:
-    plt.imshow(impr, cmap='gray')
-    print("dy = ", find_dy(impr))
+for im_price in img_prices:
+    #plt.imshow(im_price, cmap='gray')
+    print("dy = ", find_dy(im_price))
     plt.show()
 #%%
-safepr = sanitize(pr)
+safe_img_prices = sanitize(img_prices)
 
-for impr in safepr:
-    plt.imshow(impr, cmap='gray')
-    print("dy = ", find_dy(impr))
+for im_price in safe_img_prices:
+    #plt.imshow(im_price, cmap='gray')
+    print("dy = ", find_dy(im_price))
     plt.show()
 #%%
-prcif = []
-for impr in safepr:
-    prcif.append(resize_win(impr,t))
+win_prices = []
+for im_price in safe_img_prices:
+    win_prices.append(resize_win(im_price,t))
 
-for imprcif in prcif:
-    plt.imshow(imprcif, cmap='gray')
-    #print("dy = ", find_dy(imprcif))
+for im_price in win_prices:
+    plt.imshow(im_price, cmap='gray',interpolation=None)
+    #print("dy = ", find_dy(im_price))
     plt.show()
 #%%    
 pricelist = []
-
-for impr in prcif:    
-    im = Image.fromarray(np.uint8(plt.cm.gist_earth(impr)*255))
-    pricelist.append(pytesseract.image_to_string(im,config="-psm 7") )
+delist    = []
+for j,im_price in enumerate(win_prices):        
+    text, prob = recognize_price(api,im_price)
+    if prob[0]>50:
+        pricelist.append( text)
+    else: 
+        delist.append(j)
+    #problist.append(prob)
+    print(prob)
 
 print(pricelist)
 
+for j in delist[::-1]:        
+    del win_prices[j]
+    
 #%%
 #remove spaces, letters and \n
 complete_list = string.ascii_letters + ' ' + '\n'
@@ -283,27 +344,62 @@ while '' in pricelist: pricelist.remove('')
 
 print("pricelist = ", pricelist)
 #%%
+#Error correction
+errprindex = []
+for j,pricej in enumerate(pricelist):
+    if '.' not in pricej:
+        errprindex.append(j)
+        
+print(errprindex)
+
+template = cv2.imread(path+'modelv.jpg', 0)
+
+err_prices = [segment_cif(win_prices[j],t) for j in errprindex]
+
+#resize every digit for template matching
+for i,pr in enumerate(err_prices):
+    for j,im in enumerate(pr):
+        err_prices[i][j] = cv2.resize(im, (28,28))
+
+temp_res = []
+for i,pr in enumerate(err_prices):
+    res = []    
+    for j,im in enumerate(pr):
+        res.append(cv2.matchTemplate(im,template,cv2.TM_CCOEFF))
+    temp_res.append(res)
+
+err_pos = [np.argmax(i) for i in temp_res]
+
+for j,i in enumerate(errprindex):
+    list1 = list(pricelist[i])
+    list1[err_pos[j]] = '.'
+    pricelist[i] = ''.join(list1)
+
+#%%
 npricelist = []
-npricetot  = []
+npricetot  = stringtofloat(totprice)
+
 for pricej in pricelist:
-    for t in pricej.split():
-        try:
-            npricelist.append(float(t))
-        except ValueError:
-            pass
-for t in totprice.split():
-    try:
-        npricetot.append(float(t))
-    except ValueError:
-        pass
+    npricelist.append(stringtofloat(pricej))
+    
 
 print("price list  = ", npricelist)
 print("total price = ", npricetot)
 
-if npricetot[0] == np.sum(npricelist):
+if isequal(npricetot,np.sum(npricelist)):
     print("\n","Everything's OK!")
 else: 
     print("\n","Please check prices")
+#%%
+print("price list  = ", npricelist)
+print("total price        = ", npricetot)
+print("np.sum(npricelist) = ", np.sum(npricelist))
+
+if isequal(npricetot,np.sum(npricelist)):
+    print("\n","Everything's OK!")
+else: 
+    print("\n","Please check prices")
+
 #%%
 import cv2
 import numpy as np
@@ -320,7 +416,7 @@ cv2.namedWindow('image',cv2.WINDOW_KEEPRATIO)
 cv2.setMouseCallback('image',get_posxy)
 
 while(1):
-    cv2.imshow('image',img)
+    cv2.imshow('image',img_receipt)
     k = cv2.waitKey(20) & 0xFF
     if k == ord('q'):
         break
