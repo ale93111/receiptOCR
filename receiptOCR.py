@@ -12,6 +12,7 @@ Created on Tue Sep  6 16:35:53 2016
 @author: alessandro
 """
 
+#from skimage.filters import  threshold_adaptive
 import cv2
 import numpy as np
 from matplotlib import pyplot as plt
@@ -22,9 +23,7 @@ import string
 path = '/home/alessandro/bioretics/'
 
 def get_big_cont(contours):
-    areacnt = []
-    for c in contours:
-         areacnt.append(cv2.contourArea(c))
+    areacnt = [cv2.contourArea(c) for c in contours]
          
     return contours[areacnt.index(max(areacnt))]
     
@@ -219,13 +218,18 @@ img_receipt = cv2.imread(path+'s10.jpg', 0)
 #ret, img_binary = cv2.threshold(img_receipt,0,255,cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
 img_binary  = cv2.adaptiveThreshold(img_receipt, 255, cv2.ADAPTIVE_THRESH_MEAN_C, 
                                     cv2.THRESH_BINARY_INV, 61, 3)
-#img_binary = 255 - img_binary
+
+#visually better thresholding, but worse tesseract performance
+#img_binary = threshold_adaptive(img_receipt, 101, offset=10)
+#img_binary = np.uint8(img_binary)
+#img_binary = 255*(1 - img_binary)
 
 # Some morphology to clean up image
 kernel     = np.ones((8,8), np.uint8)
 opening    = cv2.morphologyEx(img_binary, cv2.MORPH_OPEN, kernel)
 img_binary = cv2.morphologyEx(opening, cv2.MORPH_CLOSE, kernel)
 #img_binary = opening.copy()
+
 
 plt.figure(figsize=(12, 12))
 plt.imshow(img_receipt, cmap='gray')
@@ -251,6 +255,8 @@ TOTposy = 2589 #per s10 OK
 #TOTposy = 2650 #per s14 15 #noise+sconto
 #TOTposx = 3780 #per s16
 #TOTposy = 2700 #per s16 #OK
+#TOTposx = 3840 #per s17
+#TOTposy = 2350 #per s17 #OK
 #%%
 width, height = img_receipt.shape
 img_tot = img_binary[(TOTposx-xmargin-t):(TOTposx+xmargin+t), 
@@ -398,7 +404,7 @@ for j,i in enumerate(errprindex):
 npricelist = [stringtofloat(pricej) for pricej in pricelist]
 npricetot  = stringtofloat(totprice)
 
-print("price list  = ", npricelist)
+print("price list  = ", npricelist)#[(i,price) for i,price in enumerate(npricelist)])
 print("total price = ", npricetot)
 ok = False
 if isequal(npricetot,np.sum(npricelist)):
@@ -425,7 +431,28 @@ if isequal(npricetot,np.sum(npricelist)):
     print("\n","Everything's OK!")
 else: 
     print("\n","Please check prices")
+#%%
+print(np.size(npricelist))
+#%%
+npeople   = 3
+ntosplit  = np.zeros((npeople,np.size(npricelist)),dtype=np.float)
+splitlist = ['12','2','12','1','12','12','23','13',
+'123','123','123','123','123']
 
+for i,a in enumerate(splitlist):
+    for p in np.arange(npeople):
+        if str(p+1) in a:
+            ntosplit[p][i] = 1.0#/np.size(npricelist)
+
+ntosplit[:] = ntosplit[:]/np.sum(ntosplit,axis=0)
+
+
+ntosplit = ntosplit*npricelist
+
+print(ntosplit)
+
+for i in np.arange(npeople):
+    print("\n total person ", i, " = ", np.sum(ntosplit[i]))
 #%%
 import cv2
 import numpy as np
